@@ -1,6 +1,16 @@
-import { Schema, model, Model, Document, HookNextFunction } from "mongoose";
+import { 
+  Schema, 
+  model, 
+  Model, 
+  Document, 
+  HookNextFunction,
+  DocumentQuery,
+} from "mongoose";
 import bcrypt from "bcrypt";
 import uuid from "uuid/v4";
+import jwt from "jsonwebtoken";
+import { JwtPayload } from "../types/Jwt";
+import { IPostDocument } from "./Post"
 
 enum Role {
   basic = "basic",
@@ -12,6 +22,10 @@ interface Address {
   street: string;
 }
 
+interface IUserModel extends Model<IUserDocument>{
+  admin: () => DocumentQuery<IUserDocument | null, IUserDocument, {}>;
+}
+
 export interface IUserDocument extends Document {
   key: string,
   username: string;
@@ -21,6 +35,8 @@ export interface IUserDocument extends Document {
   addresses: Address[];
   role: Role;
   _doc: IUserDocument;
+  like_posts: IPostDocument["_id"][];
+  generateToken: () => string;
 }
 
 const addressSchema: Schema = new Schema({
@@ -55,10 +71,28 @@ const userSchema: Schema = new Schema({
   createdAt: String,
   address: {
     type: [addressSchema]
-  }
-});
+  },
+  like_posts: [{
+    type: Schema.Types.ObjectId,
+    ref: "Post",
+  }]
+}, {timestamps: true});
 
-userSchema.pre<IUserDocument>("save", async function save(next: HookNextFunction) {
+userSchema.methods.generateToken = function(): string {
+  const payload: JwtPayload = {key: this.key}
+  return jwt.sign(payload, process.env.JWT_SECRET_KEY!, {expiresIn: "1h"});
+}
+
+userSchema.static("admin", (): DocumentQuery<IUserDocument | null, IUserDocument, {}> => {
+  return User.findOne({username: "seaseeyoul"});
+})
+
+userSchema.pre<IUserDocument>("save", async function save(this: IUserDocument, next: HookNextFunction) {
+  
+  // if (this.isNew) {
+  //   this.createdAt = new Date().toDateString();
+  // }
+
   if (!this.isModified("password")) {
     return next();
   }
@@ -73,6 +107,6 @@ userSchema.pre<IUserDocument>("save", async function save(next: HookNextFunction
 
 userSchema.index({username: 1});
 
-const User: Model<IUserDocument> = model<IUserDocument>("User", userSchema);
+const User: IUserModel = model<IUserDocument, IUserModel>("User", userSchema);
 
 export default User;
